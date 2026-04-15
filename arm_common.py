@@ -5,7 +5,7 @@ Single source of truth for:
   - Robot loading
   - IK solving (robust multi-attempt)
   - Servo angle conversion
-  - Constants and configuration
+  - Constants and configuration (arm + conveyor)
 
 All other files import from here. No more copy-paste divergence.
 """
@@ -48,6 +48,50 @@ NUM_ARM_JOINTS = 5
 # IK end effector link name
 END_LINK = "gripper_base_link"
 
+# Per-joint servo limits [min, max] — SHOULDER capped at 140 to prevent inversion
+SERVO_LIMITS = [
+    (0, 180),    # Base
+    (0, 140),    # Shoulder — robot inverts beyond ~140°
+    (0, 180),    # Elbow
+    (0, 180),    # Wrist Roll
+    (0, 180),    # Wrist Pitch
+]
+
+# =========================================================================
+# CONVEYOR BELT CONFIGURATION
+# =========================================================================
+# All conveyor/sensor settings are here so you only edit this file.
+
+CONVEYOR_SPEED       = 200    # PWM 0-255 (motor speed)
+SENSOR_THRESHOLD_CM  = 5.0    # Object detected if distance <= this (cm)
+SENSOR_STOP_DELAY_MS = 0      # ms to wait AFTER detection before stopping belt
+                               # (lets object travel a bit further onto the belt)
+
+# ---- PICK & PLACE POSITIONS (cm, in YOUR table coordinates) ----
+CONVEYOR_PICK_POINT  = (17, 0, 16)      # Where the arm grabs the object
+CONVEYOR_PLACE_POINT = (-6, -20, 18)    # Where the arm puts the object
+
+# =========================================================================
+# COORDINATE ALIGNMENT
+# =========================================================================
+TABLE_ROTATION_DEG = 17.0
+
+
+def user_to_robot_coords(x_user, y_user, z_user):
+    """
+    Rotate user's table coordinates into the robot's coordinate system.
+    Only rotates X and Y around Z-axis. Z (height) stays the same.
+    """
+    angle_rad = np.radians(TABLE_ROTATION_DEG)
+    cos_a = np.cos(angle_rad)
+    sin_a = np.sin(angle_rad)
+
+    x_robot = x_user * cos_a - y_user * sin_a
+    y_robot = x_user * sin_a + y_user * cos_a
+    z_robot = z_user
+
+    return x_robot, y_robot, z_robot
+
 
 # =========================================================================
 # ROBOT LOADING
@@ -59,14 +103,12 @@ def load_robot(urdf_filename="custom_arm.urdf"):
     Looks for the URDF in the same directory as the calling script,
     falling back to the directory of this module.
     """
-    # Try caller's directory first
     import inspect
     caller_frame = inspect.stack()[1]
     caller_dir = os.path.dirname(os.path.abspath(caller_frame.filename))
     urdf_path = os.path.join(caller_dir, urdf_filename)
 
     if not os.path.exists(urdf_path):
-        # Fall back to this module's directory
         module_dir = os.path.dirname(os.path.abspath(__file__))
         urdf_path = os.path.join(module_dir, urdf_filename)
 
@@ -77,7 +119,6 @@ def load_robot(urdf_filename="custom_arm.urdf"):
     robot = rtb.ERobot.URDF(urdf_path)
     robot.q = np.zeros(robot.n)
 
-    # Print joint order for verification
     print(f"  URDF joints ({robot.n} total):")
     for i, link in enumerate(robot):
         if hasattr(link, 'jtype') and link.jtype in ('R', 'P'):
@@ -98,21 +139,11 @@ def robust_ik(robot, target_xyz_m, max_attempts=50):
     Tries multiple random initial guesses.
     Validates servo range and prefers minimal-movement solutions.
 
-    Args:
-        robot: ERobot instance
-        target_xyz_m: tuple/list of (x, y, z) in meters
-        max_attempts: number of random restarts
-
     Returns:
         (ik_arm_angles, position_error_m) on success
-            ik_arm_angles: np.array of 5 joint angles in radians,
-                           with wrist_roll forced to 0 and elbow forced positive
         (None, None) on failure
     """
     x_m, y_m, z_m = target_xyz_m
-
-    # Position-only target — no orientation constraint.
-    # Just use a pure translation, no SE3.OA nonsense.
     Tep = SE3.Trans(x_m, y_m, z_m)
 
     best_arm = None
@@ -120,14 +151,11 @@ def robust_ik(robot, target_xyz_m, max_attempts=50):
     best_cost = float('inf')
 
     for attempt in range(max_attempts):
-        # Generate initial guess
         if attempt == 0:
             q0 = np.zeros(robot.n)
         elif attempt < 10:
-            # Small perturbations near zero (prefer natural poses)
             q0 = np.random.uniform(-0.5, 0.5, robot.n)
-            q0[3] = 0.0    # Keep wrist roll near zero
-            # Fix finger joints to zero
+            q0[3] = 0.0
             for fi in range(NUM_ARM_JOINTS, robot.n):
                 q0[fi] = 0.0
         else:
@@ -146,40 +174,37 @@ def robust_ik(robot, target_xyz_m, max_attempts=50):
             tol=1e-6
         )
 
-        # sol is (q, success, ...) — sol[1] is bool-like
         if not sol[1]:
             continue
 
         q_solution = np.array(sol[0])
 
-        # FK verification
         fk = robot.fkine(q_solution, end=END_LINK)
         err = np.linalg.norm(Tep.t - fk.t)
 
-        if err >= 0.01:  # > 1cm error — reject
+        if err >= 0.01:
             continue
 
-        # Extract arm joints and apply post-processing
-        # IMPORTANT: apply abs(elbow) and zero wrist_roll BEFORE checking servo range
         arm = q_solution[:NUM_ARM_JOINTS].copy()
-        arm[3] = 0.0           # Force wrist roll to zero
-        arm[2] = abs(arm[2])   # Force elbow positive
+        arm[3] = 0.0
+        arm[2] = abs(arm[2])
 
-        # Check servo angles are in 0-180 range AFTER post-processing
         servo = ik_to_servo_angles(arm)
-        if not all(0 <= s <= 180 for s in servo):
+        in_limits = all(
+            SERVO_LIMITS[i][0] <= servo[i] <= SERVO_LIMITS[i][1]
+            for i in range(NUM_ARM_JOINTS)
+        )
+        if not in_limits:
             continue
 
-        # Verify FK with the POST-PROCESSED angles
         q_verify = q_solution.copy()
         q_verify[:NUM_ARM_JOINTS] = arm
         fk_verify = robot.fkine(q_verify, end=END_LINK)
         err_verify = np.linalg.norm(Tep.t - fk_verify.t)
 
-        if err_verify >= 0.02:  # Allow slightly more tolerance after post-processing
+        if err_verify >= 0.02:
             continue
 
-        # Cost: prefer minimal movement
         roll_penalty = abs(arm[3]) * 0.01
         joint_cost = np.sum(np.abs(arm)) * 0.0001
         total_cost = err_verify + joint_cost + roll_penalty
@@ -202,22 +227,6 @@ def robust_ik(robot, target_xyz_m, max_attempts=50):
 def ik_to_servo_angles(ik_arm):
     """
     Convert 5 IK joint angles (radians) to servo angles (0-180°).
-
-    IK convention: 0 rad = home position (straight up)
-    Servo convention: 90° = home position (straight up)
-
-    Mapping:
-      Base:        servo = 90 - degrees(ik)
-      Shoulder:    servo = 90 - degrees(ik)
-      Elbow:       servo = 90 + degrees(ik)   (ik already forced positive via abs())
-      Wrist Roll:  servo = 90 + degrees(ik)   (ik forced to 0, so always 90°)
-      Wrist Pitch: servo = 90 - degrees(ik)
-
-    Args:
-        ik_arm: array-like of 5 joint angles in radians
-
-    Returns:
-        list of 5 servo angles (int), clamped to 0-180
     """
     ik_deg = np.degrees(ik_arm)
 
@@ -229,26 +238,18 @@ def ik_to_servo_angles(ik_arm):
         90 - ik_deg[4],   # Wrist Pitch
     ]
 
-    return [int(max(0, min(180, a))) for a in servo_angles]
+    return [int(max(SERVO_LIMITS[i][0], min(SERVO_LIMITS[i][1], a))) for i, a in enumerate(servo_angles)]
 
 
 def servo_to_ik_angles(servo_angles):
     """
     Convert 5 servo angles (degrees, 0-180) back to IK radians.
-
-    Inverse of ik_to_servo_angles.
-
-    Args:
-        servo_angles: list of 5 servo angles in degrees
-
-    Returns:
-        np.array of 5 IK angles in radians
     """
     ik_deg = [
-        90 - servo_angles[0],   # Base
-        90 - servo_angles[1],   # Shoulder
-        servo_angles[2] - 90,   # Elbow
-        servo_angles[3] - 90,   # Wrist Roll
-        90 - servo_angles[4],   # Wrist Pitch
+        90 - servo_angles[0],
+        90 - servo_angles[1],
+        servo_angles[2] - 90,
+        servo_angles[3] - 90,
+        90 - servo_angles[4],
     ]
     return np.radians(ik_deg)

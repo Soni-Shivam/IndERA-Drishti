@@ -12,7 +12,7 @@ Requirements:
 
 import numpy as np
 from arm_common import (
-    load_robot, robust_ik, ik_to_servo_angles,
+    load_robot, robust_ik, ik_to_servo_angles, user_to_robot_coords,
     JOINT_NAMES, NUM_ARM_JOINTS,
 )
 
@@ -33,9 +33,10 @@ def main():
             print("Invalid input. Enter three numbers like: 15 0 20\n")
             continue
 
-        target_m = (x / 100.0, y / 100.0, z / 100.0)
+        x_r, y_r, z_r = user_to_robot_coords(x, y, z)
+        target_m = (x_r / 100.0, y_r / 100.0, z_r / 100.0)
 
-        print(f"Solving IK for ({x}, {y}, {z}) cm...")
+        print(f"Solving IK for ({x}, {y}, {z}) cm → robot: ({x_r:.1f}, {y_r:.1f}, {z_r:.1f}) cm...")
         ik_arm, err = robust_ik(robot, target_m, max_attempts=50)
 
         if ik_arm is None:
