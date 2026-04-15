@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INDERA – Vision Monitoring Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:    #0b0d12;
+      --bg-card:    #11141d;
+      --bg-hover:   #181c29;
+      --border:     #1e2436;
+      --border-glow:#2a3660;
+
+      --accent-1:   #4f8eff;
+      --accent-2:   #7c3aff;
+      --accent-roi: #50fadc;   /* teal for ROI */
+      --accent-ok:  #22c55e;
+      --accent-warn:#f59e0b;
+      --accent-err: #ef4444;
+
+      --text-primary:   #e8eaf6;
+      --text-secondary: #8892b0;
+      --text-muted:     #4a5270;
+
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --transition: 0.2s ease;
+    }
+
+    html, body { height: 100%; background: var(--bg-base); color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; line-height: 1.6; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 3px; }
+
+    .app {
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px;
+      background: linear-gradient(90deg, #0b0d12 0%, #10142a 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+    .logo-text { font-size: 17px; font-weight: 700; background: linear-gradient(90deg, var(--accent-1), var(--accent-2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 2px; }
+    .logo-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
+    .header-right { display: flex; gap: 12px; align-items: center; }
+    .status-pill { display: flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 11px; font-weight: 500; background: var(--bg-card); }
+    .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-err); box-shadow: 0 0 5px var(--accent-err); animation: blink 2s infinite; }
+    .status-pill.ok .dot { background: var(--accent-ok); box-shadow: 0 0 5px var(--accent-ok); }
+    .status-pill.loading .dot { background: var(--accent-warn); box-shadow: 0 0 5px var(--accent-warn); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── Main 3-column grid ── */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 280px 360px;
+      grid-template-rows: 1fr 200px;
+      overflow: hidden;
+    }
+
+    /* ── Cards ── */
+    .card { background: var(--bg-card); border: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.015); flex-shrink: 0; }
+    .card-title { font-size: 10px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-secondary); display: flex; align-items: center; gap: 7px; }
+
+    /* ── Camera cell (col 1, row 1) ── */
+    #camera-cell { grid-column: 1; grid-row: 1; }
+    .feed-wrap {
+      flex: 1; position: relative; overflow: hidden;
+      background: #060709;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #camera-feed { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+
+    /* ROI canvas sits exactly over the image — positioned in JS */
+    #roi-canvas {
+      position: absolute;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* Corner bracket decorations */
+    .corner { position: absolute; width: 22px; height: 22px; border-color: var(--accent-1); border-style: solid; opacity: 0.5; pointer-events: none; }
+    .corner.tl { top:8px;left:8px; border-width:2px 0 0 2px; border-radius:3px 0 0 0; }
+    .corner.tr { top:8px;right:8px; border-width:2px 2px 0 0; border-radius:0 3px 0 0; }
+    .corner.bl { bottom:8px;left:8px; border-width:0 0 2px 2px; border-radius:0 0 0 3px; }
+    .corner.br { bottom:8px;right:8px; border-width:0 2px 2px 0; border-radius:0 0 3px 0; }
+
+    .btn-row { display: flex; gap: 8px; padding: 10px 14px; flex-shrink: 0; }
+    #capture-btn {
+      flex: 1; height: 40px; border: none; cursor: pointer; border-radius: 9px;
+      font-family: var(--font-sans); font-size: 12px; font-weight: 600; letter-spacing: 0.4px;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); color: #fff;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: opacity var(--transition), transform var(--transition);
+      position: relative; overflow: hidden;
+    }
+    #capture-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    #capture-btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none; }
+    #reset-roi-btn {
+      height: 40px; padding: 0 14px; border: 1px solid var(--border-glow);
+      background: rgba(80,250,220,0.07); color: var(--accent-roi);
+      border-radius: 9px; font-family: var(--font-sans); font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: background var(--transition);
+      display: flex; align-items: center; gap: 5px;
+    }
+    #reset-roi-btn:hover { background: rgba(80,250,220,0.15); }
+
+    /* ── Crop preview cell (col 2, row 1) ── */
+    #crop-cell { grid-column: 2; grid-row: 1; border-left: 1px solid var(--border); }
+    .crop-wrap { flex: 1; background: #060709; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+    #crop-feed { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .roi-hint {
+      position: absolute; bottom: 8px; left: 0; right: 0;
+      text-align: center; font-size: 10px; color: var(--text-muted);
+      pointer-events: none; letter-spacing: 0.5px;
+    }
+    #roi-coords-badge {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--accent-roi); padding: 3px 8px;
+      background: rgba(80,250,220,0.08); border: 1px solid rgba(80,250,220,0.2);
+      border-radius: 5px;
+    }
+
+    /* ── Results cell (col 3, row 1) ── */
+    #results-cell { grid-column: 3; grid-row: 1; border-left: 1px solid var(--border); }
+    .result-body { flex: 1; overflow-y: auto; padding: 12px; }
+    .result-hero { border-radius: var(--radius-md); border: 1px solid var(--border-glow); background: linear-gradient(135deg, rgba(79,142,255,0.06), rgba(124,58,255,0.06)); padding: 14px; margin-bottom: 12px; animation: fadein 0.35s ease; }
+    @keyframes fadein { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    .result-hero .lbl { font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+    .result-hero .val { font-size: 20px; font-weight: 700; color: var(--accent-1); line-height: 1.2; }
+    .result-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+    .meta-box { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; }
+    .meta-box .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+    .meta-box .val { font-size: 12px; font-weight: 600; margin-top: 2px; }
+    .group-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; background: rgba(79,142,255,0.15); color: var(--accent-1); border: 1px solid rgba(79,142,255,0.3); }
+    .raw-output { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; margin-top: 8px; word-break: break-all; line-height: 1.7; }
+    .history-title { font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-muted); margin: 4px 0 6px; }
+    .history-list { display: flex; flex-direction: column; gap: 5px; }
+    .history-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--border); background: rgba(255,255,255,0.015); animation: fadein 0.25s ease; }
+    .history-item:hover { background: var(--bg-hover); }
+    .history-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-ok); flex-shrink: 0; }
+    .history-obj { font-weight: 600; font-size: 11px; }
+    .history-grp { font-size: 10px; color: var(--text-muted); }
+    .history-time { font-size: 9px; color: var(--text-muted); font-family: var(--font-mono); margin-left: auto; flex-shrink: 0; }
+
+    /* ── Log cell (col 1, row 2) ── */
+    #log-cell { grid-column: 1; grid-row: 2; border-top: 1px solid var(--border); }
+    .log-body { flex: 1; overflow-y: auto; padding: 6px 12px; font-family: var(--font-mono); font-size: 11px; }
+    .log-line { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+    .log-line .ts { color: var(--text-muted); opacity: 0.5; margin-right: 8px; }
+    .log-line.ok  .msg { color: var(--accent-ok); }
+    .log-line.warn .msg { color: var(--accent-warn); }
+    .log-line.error .msg { color: var(--accent-err); }
+    .log-line.roi .msg { color: var(--accent-roi); }
+    .log-line.info .msg { color: var(--text-secondary); }
+
+    /* ── Last Capture cell (col 2, row 2) ── */
+    #capture-cell { grid-column: 2; grid-row: 2; border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+    .capture-wrap {
+      flex: 1; background: #060709; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    #last-capture-img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+      display: block;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    #last-capture-img.loaded { opacity: 1; }
+    .capture-placeholder {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 6px;
+      color: var(--text-muted); pointer-events: none; font-size: 11px;
+    }
+    .capture-placeholder svg { opacity: 0.25; }
+    #capture-flash {
+      position: absolute; inset: 0; background: rgba(80,250,220,0.18);
+      border-radius: 0; opacity: 0; pointer-events: none;
+      transition: opacity 0.05s;
+    }
+
+    /* ── Settings cell (col 3, row 2) ── */
+    #settings-cell { grid-column: 3; grid-row: 2; border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+    .settings-body { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .field-row { display: flex; flex-direction: column; gap: 3px; }
+    .field-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); }
+    .field-input { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; padding: 5px 8px; width: 100%; outline: none; transition: border-color var(--transition); }
+    .field-input:focus { border-color: var(--accent-1); }
+    .save-btn { padding: 6px 14px; border-radius: 7px; border: 1px solid var(--accent-1); background: rgba(79,142,255,0.1); color: var(--accent-1); font-size: 11px; font-weight: 600; cursor: pointer; font-family: var(--font-sans); transition: background var(--transition); }
+    .save-btn:hover { background: rgba(79,142,255,0.2); }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .toggle { position: relative; display: inline-block; width: 34px; height: 18px; }
+    .toggle input { display: none; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background 0.2s; }
+    .toggle-slider::before { content: ''; position: absolute; width: 12px; height: 12px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.2s; }
+    .toggle input:checked + .toggle-slider { background: var(--accent-1); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+    /* Spinner */
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Model loading overlay */
+    #model-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(11,13,18,0.93); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+    #model-overlay.hidden { display: none; }
+    .load-spinner { width: 48px; height: 48px; border: 3px solid rgba(79,142,255,0.2); border-top-color: var(--accent-1); border-radius: 50%; animation: spin 1s linear infinite; }
+    .load-text { font-size: 15px; font-weight: 600; }
+    .load-sub { font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div id="model-overlay">
+  <div class="load-spinner"></div>
+  <div class="load-text">Loading PaliGemma Model…</div>
+  <div class="load-sub">The model stays in memory for fast repeated inference.</div>
+</div>
+
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🔬</div>
+      <div>
+        <div class="logo-text">INDERA</div>
+        <div class="logo-sub">Vision Classification System</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="roi-coords-badge">ROI: –</span>
+      <div class="status-pill" id="cam-pill"><div class="dot"></div><span>Camera</span></div>
+      <div class="status-pill" id="model-pill"><div class="dot"></div><span>Model</span></div>
+      <span id="result-count" style="font-size:11px;color:var(--text-muted);">0 scans</span>
+    </div>
+  </header>
+
+  <div class="main">
+
+    <!-- ── Full camera feed + ROI selector (col 1) ── -->
+    <div class="card" id="camera-cell">
+      <div class="card-header">
+        <span class="card-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          ESP32-CAM · Draw to set ROI
+        </span>
+        <span id="fps-badge" style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono)"></span>
+      </div>
+      <div class="feed-wrap" id="feed-wrap">
+        <img id="camera-feed" src="/video_feed" alt="Live feed" />
+        <!-- ROI canvas injected here by JS -->
+        <canvas id="roi-canvas"></canvas>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+      <div class="btn-row">
+        <button id="capture-btn" disabled>
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M20.94 11A8 8 0 1 1 12 4"/></svg>
+          <div class="spinner" id="capture-spinner"></div>
+          <span id="capture-label">Scan &amp; Classify</span>
+        </button>
+        <button id="reset-roi-btn" title="Reset ROI to full frame">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.65"/></svg>
+          Reset
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Crop preview (col 2) ── -->
+    <div class="card" id="crop-cell">
+      <div class="card-header">
+        <span class="card-title" style="color:var(--accent-roi);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+          Crop Preview · Model Input
+        </span>
+      </div>
+      <div class="crop-wrap">
+        <img id="crop-feed" src="/crop_feed" alt="Cropped ROI" />
+        <div class="roi-hint" id="roi-hint">Draw a rectangle on the full feed →</div>
+      </div>
+    </div>
+
+    <!-- ── Results (col 3) ── -->
+    <div class="card" id="results-cell">
+      <div class="card-header">
+        <span class="card-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Classification Output
+        </span>
+      </div>
+      <div class="result-body" id="result-body">
+        <div style="color:var(--text-muted);text-align:center;padding:30px 16px;font-size:12px;">
+          Define an ROI then press <strong>Scan &amp; Classify</strong>.
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log (col 1, row 2) ── -->
+    <div class="card" id="log-cell">
+      <div class="card-header">
+        <span class="card-title">System Log</span>
+        <button onclick="document.getElementById('log-body').innerHTML=''" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:10px;">Clear</button>
+      </div>
+      <div class="log-body" id="log-body"></div>
+    </div>
+
+    <!-- ── Last Capture (col 2, row 2) ── -->
+    <div class="card" id="capture-cell">
+      <div class="card-header">
+        <span class="card-title" style="color:var(--accent-warn);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M20.94 11A8 8 0 1 1 12 4"/></svg>
+          Last Frame Sent to Model
+        </span>
+        <span id="capture-ts" style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);"></span>
+      </div>
+      <div class="capture-wrap">
+        <img id="last-capture-img" alt="Last capture" src="" />
+        <div class="capture-placeholder" id="capture-placeholder">
+          <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M20.94 11A8 8 0 1 1 12 4"/></svg>
+          <span>Capture an image to see it here</span>
+        </div>
+        <div id="capture-flash"></div>
+      </div>
+    </div>
+
+    <!-- ── Settings (col 3, row 2) ── -->
+    <div class="card" id="settings-cell">
+      <div class="card-header">
+        <span class="card-title">Settings</span>
+      </div>
+      <div class="settings-body">
+        <div class="field-row">
+          <label class="field-label">Stream URL</label>
+          <input class="field-input" id="inp-stream" type="text" placeholder="http://10.53.7.152:81/stream" />
+        </div>
+        <div class="field-row">
+          <label class="field-label">Snapshot URL</label>
+          <input class="field-input" id="inp-snap" type="text" placeholder="http://10.53.7.152:80/capture" />
+        </div>
+        <div class="field-row">
+          <label class="field-label">Inventory Groups</label>
+          <input class="field-input" id="inp-groups" type="text" />
+        </div>
+        <div class="toggle-row">
+          <span class="field-label">Use Snapshot Endpoint</span>
+          <label class="toggle"><input type="checkbox" id="tog-snapshot" checked /><div class="toggle-slider"></div></label>
+        </div>
+        <button class="save-btn" onclick="saveSettings()">Apply Settings</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── Utilities ── */
+const $ = id => document.getElementById(id);
+const ts = () => new Date().toLocaleTimeString('en-GB', {hour12:false});
+
+function addLog(msg, level='info') {
+  const el = document.createElement('div');
+  el.className = `log-line ${level}`;
+  el.innerHTML = `<span class="ts">[${ts()}]</span><span class="msg">${msg}</span>`;
+  const b = $('log-body');
+  b.appendChild(el);
+  b.scrollTop = b.scrollHeight;
+  while (b.children.length > 300) b.removeChild(b.firstChild);
+}
+
+/* ── Status poller ── */
+let modelReady = false, scanCount = 0;
+const history = [];
+
+async function pollStatus() {
+  try {
+    const d = await fetch('/status').then(r => r.json());
+
+    const cp = $('cam-pill');
+    cp.className = 'status-pill' + (d.camera_running ? ' ok' : '');
+
+    const mp = $('model-pill');
+    if (d.model_error) {
+      mp.className = 'status-pill';
+    } else if (d.model_ready) {
+      mp.className = 'status-pill ok';
+    } else {
+      mp.className = 'status-pill loading';
+    }
+
+    if (!$('inp-stream').value) {
+      $('inp-stream').value = d.stream_url || '';
+      $('inp-groups').value = (d.inventory_groups || []).join(', ');
+    }
+
+    if (d.model_ready && !modelReady) {
+      modelReady = true;
+      $('model-overlay').classList.add('hidden');
+      $('capture-btn').disabled = false;
+      addLog('PaliGemma model ready.', 'ok');
+    }
+
+    // Sync ROI badge from server on first load
+    if (d.roi) syncRoiBadge(d.roi);
+
+  } catch(e) { addLog('Status poll failed: ' + e.message, 'warn'); }
+}
+setInterval(pollStatus, 2500);
+pollStatus();
+
+/* ── FPS counter ── */
+let lastFrameTs = 0, fpsSmooth = 0;
+$('camera-feed').addEventListener('load', () => {
+  const now = performance.now();
+  if (lastFrameTs) { const fps = 1000/(now-lastFrameTs); fpsSmooth = fpsSmooth*0.8 + fps*0.2; $('fps-badge').textContent = fpsSmooth.toFixed(1) + ' fps'; }
+  lastFrameTs = now;
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ROI SELECTOR
+   Draw a rectangle on the canvas overlay over the img.
+   Coordinates are normalised to [0,1] relative to the
+   actual rendered image area (accounts for letterboxing).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+const canvas = $('roi-canvas');
+const ctx    = canvas.getContext('2d');
+const wrap   = $('feed-wrap');
+const img    = $('camera-feed');
+
+// Current committed ROI in normalised [0,1]
+let committedRoi = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+
+// Drag state
+let dragging = false, dragStart = null, dragEnd = null;
+let roiPx = null; // committed ROI in canvas pixels
+
+/* Get the actual rendered bounds of the <img> within the wrapper
+   (object-fit: contain means there may be letterbox bars). */
+function getImgBounds() {
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  const nw = img.naturalWidth  || 640;
+  const nh = img.naturalHeight || 480;
+  const scale = Math.min(ww / nw, wh / nh);
+  const rw = nw * scale, rh = nh * scale;
+  return {
+    left: (ww - rw) / 2,
+    top:  (wh - rh) / 2,
+    w: rw, h: rh, scale
+  };
+}
+
+/* Fit canvas over the entire feed-wrap */
+function resizeCanvas() {
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  // Position absolute at 0,0 is set via CSS / initial placement
+  canvas.style.left = '0';
+  canvas.style.top  = '0';
+  canvas.style.width  = wrap.clientWidth  + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+  redrawRoi();
+}
+new ResizeObserver(resizeCanvas).observe(wrap);
+img.addEventListener('load', resizeCanvas);
+
+/* Convert canvas pixel → normalised image coord */
+function pxToNorm(px, py) {
+  const b = getImgBounds();
+  return {
+    nx: Math.max(0, Math.min(1, (px - b.left) / b.w)),
+    ny: Math.max(0, Math.min(1, (py - b.top)  / b.h)),
+  };
+}
+
+/* Convert normalised → canvas pixel */
+function normToPx(nx, ny) {
+  const b = getImgBounds();
+  return { px: b.left + nx * b.w, py: b.top + ny * b.h };
+}
+
+function redrawRoi() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let rect;
+  if (dragging && dragStart && dragEnd) {
+    rect = normRectFromPoints(dragStart, dragEnd);
+  } else {
+    rect = committedRoi;
+  }
+
+  const p1 = normToPx(rect.x,          rect.y);
+  const p2 = normToPx(rect.x + rect.w, rect.y + rect.h);
+  const rx = p1.px, ry = p1.py, rw = p2.px - p1.px, rh = p2.py - p1.py;
+
+  // Dark overlay outside the ROI
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(rx, ry, rw, rh);
+
+  // ROI border
+  ctx.strokeStyle = '#50fadc';
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([]);
+  ctx.strokeRect(rx, ry, rw, rh);
+
+  // Corner ticks — [cornerX, cornerY, xDir, yDir]
+  const tk = 14;
+  ctx.lineWidth    = 3;
+  ctx.strokeStyle  = '#50fadc';
+  [[rx,      ry,       1,  1],
+   [rx + rw, ry,      -1,  1],
+   [rx,      ry + rh,  1, -1],
+   [rx + rw, ry + rh, -1, -1]].forEach(([cx, cy, dx, dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(cx,            cy + dy * tk);
+    ctx.lineTo(cx,            cy);
+    ctx.lineTo(cx + dx * tk,  cy);
+    ctx.stroke();
+  });
+
+  // Label
+  ctx.fillStyle = '#50fadc';
+  ctx.font = '500 11px Inter, sans-serif';
+  ctx.fillText('ROI', rx + 5, ry - 5);
+
+  roiPx = { rx, ry, rw, rh };
+}
+
+function normRectFromPoints(a, b) {
+  const x = Math.min(a.nx, b.nx);
+  const y = Math.min(a.ny, b.ny);
+  const w = Math.abs(a.nx - b.nx);
+  const h = Math.abs(a.ny - b.ny);
+  return { x: Math.max(0,x), y: Math.max(0,y), w: Math.max(0.01,Math.min(1-x,w)), h: Math.max(0.01,Math.min(1-y,h)) };
+}
+
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { px: src.clientX - r.left, py: src.clientY - r.top };
+}
+
+canvas.addEventListener('mousedown',  e => { e.preventDefault(); dragging = true; const p = canvasPos(e); dragStart = pxToNorm(p.px, p.py); dragEnd = dragStart; });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); dragging = true; const p = canvasPos(e); dragStart = pxToNorm(p.px, p.py); dragEnd = dragStart; }, {passive:false});
+
+canvas.addEventListener('mousemove',  e => { if (!dragging) return; const p = canvasPos(e); dragEnd = pxToNorm(p.px, p.py); redrawRoi(); });
+canvas.addEventListener('touchmove',  e => { if (!dragging) return; e.preventDefault(); const p = canvasPos(e); dragEnd = pxToNorm(p.px, p.py); redrawRoi(); }, {passive:false});
+
+async function finishDrag() {
+  if (!dragging) return;
+  dragging = false;
+  if (!dragStart || !dragEnd) return;
+
+  const rect = normRectFromPoints(dragStart, dragEnd);
+  // Only commit if the rect is large enough (> 2% in each dimension)
+  if (rect.w < 0.02 || rect.h < 0.02) { redrawRoi(); return; }
+
+  committedRoi = rect;
+  dragStart = dragEnd = null;
+  redrawRoi();
+  await sendRoi(committedRoi);
+}
+canvas.addEventListener('mouseup',   finishDrag);
+canvas.addEventListener('touchend',  finishDrag);
+canvas.addEventListener('mouseleave', () => { if (dragging) finishDrag(); });
+
+async function sendRoi(roi) {
+  try {
+    const r = await fetch('/set_roi', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(roi) });
+    const d = await r.json();
+    if (d.ok) {
+      syncRoiBadge(roi);
+      addLog(`ROI set → x:${roi.x.toFixed(3)} y:${roi.y.toFixed(3)} w:${roi.w.toFixed(3)} h:${roi.h.toFixed(3)}`, 'roi');
+      $('roi-hint').style.display = 'none';
+    }
+  } catch(e) { addLog('ROI update failed: ' + e.message, 'error'); }
+}
+
+function syncRoiBadge(roi) {
+  $('roi-coords-badge').textContent =
+    `ROI  x:${roi.x.toFixed(2)}  y:${roi.y.toFixed(2)}  w:${roi.w.toFixed(2)}  h:${roi.h.toFixed(2)}`;
+  committedRoi = { x: roi.x, y: roi.y, w: roi.w, h: roi.h };
+  redrawRoi();
+}
+
+$('reset-roi-btn').addEventListener('click', async () => {
+  committedRoi = { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+  redrawRoi();
+  await sendRoi(committedRoi);
+  addLog('ROI reset to full frame.', 'roi');
+});
+
+/* ── Capture ── */
+async function capture() {
+  const btn = $('capture-btn');
+  btn.disabled = true;
+  $('capture-spinner').style.display = 'block';
+  $('capture-label').textContent = 'Inferring…';
+  addLog('Sending cropped ROI to PaliGemma…', 'info');
+
+  try {
+    const d = await fetch('/capture', {method:'POST'}).then(r=>r.json());
+    if (d.error) throw new Error(d.error);
+    scanCount++;
+    history.unshift(d);
+    if (history.length > 50) history.pop();
+    renderResult(d);
+    addLog(`Object: ${d.object} | Group: ${d.group}`, 'ok');
+    $('result-count').textContent = `${scanCount} scan${scanCount!==1?'s':''}`;
+
+    // ── Refresh the "last capture" image ──
+    const captureImg = $('last-capture-img');
+    captureImg.classList.remove('loaded');
+    captureImg.onload = () => {
+      captureImg.classList.add('loaded');
+      $('capture-placeholder').style.display = 'none';
+      // Flash effect
+      const flash = $('capture-flash');
+      flash.style.opacity = '1';
+      setTimeout(() => { flash.style.opacity = '0'; }, 120);
+      $('capture-ts').textContent = new Date(d.timestamp||Date.now()).toLocaleTimeString('en-GB',{hour12:false});
+    };
+    captureImg.src = '/last_capture?t=' + Date.now();
+    // ───────────────────────────────────
+  } catch(e) {
+    addLog('Inference failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = !modelReady;
+    $('capture-spinner').style.display = 'none';
+    $('capture-label').textContent = 'Scan & Classify';
+  }
+}
+$('capture-btn').addEventListener('click', capture);
+
+/* ── SSE ── */
+const es = new EventSource('/events');
+es.onmessage = e => {
+  const d = JSON.parse(e.data);
+  if (d.type === 'result') {
+    scanCount++;
+    history.unshift(d);
+    if (history.length > 50) history.pop();
+    renderResult(d);
+    $('result-count').textContent = `${scanCount} scan${scanCount!==1?'s':''}`;
+    addLog(`[SSE] ${d.object} → ${d.group}`, 'ok');
+  }
+};
+es.onerror = () => addLog('SSE disconnected — retrying…', 'warn');
+
+/* ── Render results ── */
+function fmt(s) { return s ? s[0].toUpperCase() + s.slice(1) : '—'; }
+
+function renderResult(data) {
+  const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleTimeString('en-GB',{hour12:false}) : ts();
+  const heroHTML = `
+    <div class="result-hero">
+      <div class="lbl">Detected Object</div>
+      <div class="val">${fmt(data.object)}</div>
+      <div class="result-meta">
+        <div class="meta-box"><div class="lbl">Category</div><div class="val"><span class="group-badge">${fmt(data.group)}</span></div></div>
+        <div class="meta-box"><div class="lbl">Time</div><div class="val" style="font-family:var(--font-mono);font-size:11px;">${timeStr}</div></div>
+      </div>
+      ${data.description?`<div class="raw-output" style="color:var(--text-secondary)">${data.description}</div>`:''}
+      <div class="raw-output">RAW › ${data.raw_output||'—'}</div>
+    </div>`;
+
+  let histHTML = '';
+  if (history.length > 1) {
+    histHTML = `<div class="history-title">Previous Scans</div><div class="history-list">`;
+    for (let i=1; i<Math.min(history.length,12); i++) {
+      const h = history[i];
+      const ht = h.timestamp ? new Date(h.timestamp).toLocaleTimeString('en-GB',{hour12:false}) : '';
+      histHTML += `<div class="history-item"><div class="history-dot"></div><div style="flex:1;min-width:0"><div class="history-obj">${fmt(h.object)}</div><div class="history-grp">${fmt(h.group)}</div></div><div class="history-time">${ht}</div></div>`;
+    }
+    histHTML += `</div>`;
+  }
+  $('result-body').innerHTML = heroHTML + histHTML;
+}
+
+/* ── Settings ── */
+async function saveSettings() {
+  const payload = {
+    stream_url:            $('inp-stream').value.trim(),
+    snapshot_url:          $('inp-snap').value.trim(),
+    inventory_groups:      $('inp-groups').value.split(',').map(s=>s.trim()).filter(Boolean),
+    use_snapshot_endpoint: $('tog-snapshot').checked,
+  };
+  addLog('Applying settings…', 'info');
+  try {
+    const d = await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if (d.ok) addLog('Settings saved.', 'ok');
+  } catch(e) { addLog('Settings error: ' + e.message, 'error'); }
+}
+
+addLog('Dashboard ready. Draw a rectangle on the camera feed to set your ROI.', 'info');
+</script>
+</body>
+</html>
