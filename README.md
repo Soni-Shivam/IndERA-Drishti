@@ -2,6 +2,7 @@
 <img width="718" height="797" alt="image" src="https://github.com/user-attachments/assets/86608069-8dc6-40dc-96a3-f189ec38b91e" />
 
 Videos for Demo can be found here - https://drive.google.com/drive/folders/1P4b91-Dg2tlPtwPfC3rTbewuPNpMdRDS
+Project Report for more details - https://github.com/Soni-Shivam/IndERA-Drishti/blob/main/IndERA-Drishti.pdf
 ## Overview
 IndERA-Drishti is an autonomous sorting system that gives traditional industrial robotic arms cognitive vision using advanced AI. Developed for decentralized sorting of unstructured, unknown objects (such as end-of-life recycling waste), the system leverages Google's PaliGemma Vision-Language Model (VLM) for zero-shot object classification. 
 
