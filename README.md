@@ -1,5 +1,5 @@
 # IndERA-Drishti: Vision-Language Integrated Robotic Sorting for Industry 4.0
-
+Videos for Demo can be found here - https://drive.google.com/drive/folders/1P4b91-Dg2tlPtwPfC3rTbewuPNpMdRDS
 ## Overview
 IndERA-Drishti is an autonomous sorting system that gives traditional industrial robotic arms cognitive vision using advanced AI. Developed for decentralized sorting of unstructured, unknown objects (such as end-of-life recycling waste), the system leverages Google's PaliGemma Vision-Language Model (VLM) for zero-shot object classification. 
 
