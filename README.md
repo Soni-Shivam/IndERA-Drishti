@@ -1,4 +1,6 @@
 # IndERA-Drishti: Vision-Language Integrated Robotic Sorting for Industry 4.0
+<img width="718" height="797" alt="image" src="https://github.com/user-attachments/assets/86608069-8dc6-40dc-96a3-f189ec38b91e" />
+
 Videos for Demo can be found here - https://drive.google.com/drive/folders/1P4b91-Dg2tlPtwPfC3rTbewuPNpMdRDS
 ## Overview
 IndERA-Drishti is an autonomous sorting system that gives traditional industrial robotic arms cognitive vision using advanced AI. Developed for decentralized sorting of unstructured, unknown objects (such as end-of-life recycling waste), the system leverages Google's PaliGemma Vision-Language Model (VLM) for zero-shot object classification. 
@@ -13,6 +15,7 @@ The system autonomously identifies items on a moving conveyor belt, calculates p
 * **Web Dashboard**: Flask-based interface for real-time ESP32-CAM monitoring, interactive Region of Interest (ROI) cropping, and live inference logs.
 
 ## System Architecture
+<img width="2048" height="2048" alt="Gemini_Generated_Image_z4abooz4abooz4ab" src="https://github.com/user-attachments/assets/d739cd6c-c5cb-4fde-a56f-5b036a93fba4" />
 
 ### Hardware Components
 * **Perception Node**: ESP32-CAM module providing overhead live video feed.
@@ -20,6 +23,7 @@ The system autonomously identifies items on a moving conveyor belt, calculates p
 * **Conveyor System**: Mini conveyor belt driven by a BO motor and L298N/L293D motor driver.
 * **Sensors**: HC-SR04 ultrasonic sensor for object detection and conveyor stopping.
 * **Low-Level Controller**: Arduino (Mega/Uno) parsing serial commands and controlling servos/motors.
+<img width="3000" height="1723" alt="circuit_image (2)" src="https://github.com/user-attachments/assets/202ea06f-7a55-426d-9ad4-25b34e30f58f" />
 
 ### Software Stack
 * **AI/Vision**: PyTorch, Transformers, PaliGemma VLM, OpenCV, PIL.
